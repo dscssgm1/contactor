@@ -21,6 +21,10 @@ class Relay:
     def __init__(self, config):
         self.config=config; self.registrations={}; self.sessions={}; self.transports=[]; self.replay=ReplayCache(); self.running=True
     async def run(self):
+        from .tunnel import TunnelServer
+        self.tunnel = TunnelServer(self.config)
+        if self.config.stream_secret:
+            await self.tunnel.start()
         loop=asyncio.get_running_loop()
         t,_=await loop.create_datagram_endpoint(lambda:Endpoint(self,'control'), local_addr=(self.config.listen_host,self.config.listen_port)); self.transports.append(t)
         for tid,target in self.config.targets.items():
