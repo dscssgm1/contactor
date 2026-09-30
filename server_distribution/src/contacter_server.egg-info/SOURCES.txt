@@ -1,6 +1,7 @@
 README.md
 pyproject.toml
 src/contacter_server/__init__.py
+src/contacter_server/auth.py
 src/contacter_server/config.py
 src/contacter_server/models.py
 src/contacter_server/relay.py

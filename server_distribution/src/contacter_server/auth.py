@@ -1,23 +1,7 @@
 from __future__ import annotations
-import base64
-import hashlib
-import hmac
 import time
 from collections import OrderedDict
-
-
-def key(secret: bytes, role: str) -> bytes:
-    return hmac.new(secret, ("contacter/v1/" + role).encode(), hashlib.sha256).digest()
-
-
-def secret_bytes(value: str) -> bytes:
-    try:
-        raw = bytes.fromhex(value)
-    except ValueError:
-        raw = base64.b64decode(value, validate=True)
-    if len(raw) < 16:
-        raise ValueError("secret must contain at least 16 bytes")
-    return raw
+from contacter_wire.auth import key
 
 
 class ReplayCache:

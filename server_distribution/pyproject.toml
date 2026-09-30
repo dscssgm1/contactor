@@ -13,3 +13,4 @@ contacter-server = "contacter_server.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["contacter_server*", "contacter_wire*"]

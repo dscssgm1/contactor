@@ -1,6 +1,0 @@
-Metadata-Version: 2.1
-Name: contacter-client
-Version: 0.1.0
-Summary: B-side and A-side clients for Contacter UDP relay
-Requires-Python: >=3.10
-

@@ -1,2 +1,0 @@
-[console_scripts]
-contacter-server = contacter_server.server:main

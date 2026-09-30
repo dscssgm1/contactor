@@ -1,7 +1,8 @@
 from __future__ import annotations
 import asyncio, json, logging, secrets, time
 from contacter_wire.protocol import Message, Packet, decode, encode, make
-from contacter_wire.auth import ReplayCache, key
+from contacter_wire.auth import key
+from .auth import ReplayCache
 from .models import Registration, Session
 from .config import RelayConfig
 
@@ -57,7 +58,30 @@ class Relay:
             secret=key(target.b_secret if role=='b' else target.a_secret, role)
             p=decode(data,secret,now=time.time())
             if self.replay.seen((role,tid,addr),p.nonce): return
-        except Exception: return
+        except Exception:
+            # DATA/CLOSE frames contain opaque game bytes, so they cannot carry a
+            # JSON target selector. Resolve their key from an already authenticated
+            # B registration or A session endpoint instead.
+            try:
+                for candidate_id, registration in self.registrations.items():
+                    if registration.endpoint == addr:
+                        target = registration.target
+                        tid, role = candidate_id, 'b'
+                        p = decode(data, key(target.b_secret, 'b'), now=time.time())
+                        break
+                else:
+                    match = next((session for session in self.sessions.values() if session.a_endpoint == addr), None)
+                    if match is None:
+                        return
+                    tid, role = match.target_id, 'a'
+                    target = self.config.targets[tid]
+                    p = decode(data, key(target.a_secret, 'a'), now=time.time())
+                if p.message not in (Message.DATA, Message.CLOSE):
+                    return
+                if self.replay.seen((role, tid, addr), p.nonce):
+                    return
+            except Exception:
+                return
         if p.message in (Message.REGISTER,Message.KEEPALIVE) and role=='b':
             r=self.registrations.setdefault(tid,Registration(target)); r.endpoint=addr; r.expires=time.monotonic()+45; r.generation+=1
             out=make(Message.REGISTER_OK,p.session_id,jdump({'target_id':tid,'public_port':target.public_port}))

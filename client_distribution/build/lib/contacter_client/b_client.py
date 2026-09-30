@@ -24,9 +24,21 @@ class BClient(asyncio.DatagramProtocol):
     def datagram_received(self,data,addr):
         try: p=decode(data,key(self.secret,'b'),now=time.time())
         except ValueError: return
-        if p.message==Message.OPEN: asyncio.create_task(self.open_session(p.session_id))
-        elif p.message==Message.DATA and p.session_id in self.sessions: self.local_transports[p.session_id].sendto(p.payload)
-        elif p.message==Message.CLOSE: self.close_session(p.session_id)
+        if p.message == Message.OPEN:
+            asyncio.create_task(self.open_session(p.session_id))
+        elif p.message == Message.DATA:
+            # UDP can deliver DATA before OPEN; establish the bridge on demand
+            # instead of silently dropping the first game packet.
+            asyncio.create_task(self.forward_data(p.session_id, p.payload))
+        elif p.message == Message.CLOSE:
+            self.close_session(p.session_id)
+
+    async def forward_data(self, sid, payload):
+        if sid not in self.sessions:
+            await self.open_session(sid)
+        transport = self.local_transports.get(sid)
+        if transport:
+            transport.sendto(payload)
     async def open_session(self,sid):
         if sid in self.sessions: return
         loop=asyncio.get_running_loop(); proto=LocalBridge(self,sid)
