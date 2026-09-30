@@ -25,12 +25,15 @@ class Request:
 
 
 def _headers(raw: Iterable[tuple[bytes, bytes]]) -> tuple[list[tuple[bytes, bytes]], dict[str, list[bytes]]]:
-    clean, grouped = [], {}
+    grouped = {}
+    connection_tokens = set()
     for name, value in raw:
         key = name.decode("latin1").lower()
-        if key in _HOP:
-            continue
-        clean.append((name, value)); grouped.setdefault(key, []).append(value)
+        grouped.setdefault(key, []).append(value)
+        if key == "connection":
+            connection_tokens.update(x.strip().lower() for x in value.decode("latin1").split(","))
+    blocked = _HOP | connection_tokens
+    clean = [(name, value) for name, value in raw if name.decode("latin1").lower() not in blocked]
     return clean, grouped
 
 
@@ -78,6 +81,8 @@ class HttpProxy:
             raw.append((name, value))
             if len(raw) > self.limits.max_header_count: raise HttpProxyError(431, "too many headers")
         _, grouped = _headers(raw)
+        if len(grouped.get("host", [])) != 1 or not grouped["host"][0].strip():
+            raise HttpProxyError(400, "missing or duplicate host")
         cls = grouped.get("content-length", [])
         tes = grouped.get("transfer-encoding", [])
         if cls and (len(set(cls)) != 1 or not cls[0].isdigit()): raise HttpProxyError(400, "conflicting content length")
@@ -99,7 +104,10 @@ class HttpProxy:
             try: size = int(line.split(b";", 1)[0].strip(), 16)
             except ValueError: raise HttpProxyError(400, "bad chunk")
             if size == 0:
-                while await reader.readline() not in (b"\r\n", b"\n"): pass
+                while True:
+                    trailer = await reader.readline()
+                    if not trailer: raise HttpProxyError(400, "truncated chunk trailer")
+                    if trailer in (b"\r\n", b"\n"): break
                 return bytes(out)
             if len(out) + size > self.limits.max_body_bytes: raise HttpProxyError(413, "body too large")
             out.extend(await reader.readexactly(size))
@@ -140,8 +148,15 @@ class HttpProxy:
             while True:
                 chunk=await asyncio.wait_for(reader.readline(), self.limits.read_timeout); writer.write(chunk)
                 size=int(chunk.split(b";",1)[0],16)
-                if size == 0: writer.write(await reader.readline()); break
-                writer.write(await reader.readexactly(size+2))
+                if size == 0:
+                    while True:
+                        trailer = await asyncio.wait_for(reader.readline(), self.limits.read_timeout)
+                        if not trailer: raise HttpProxyError(502, "truncated upstream trailer")
+                        writer.write(trailer)
+                        if trailer in (b"\r\n", b"\n"): break
+                    break
+                if size > self.limits.max_body_bytes: raise HttpProxyError(502, "upstream body too large")
+                writer.write(await asyncio.wait_for(reader.readexactly(size+2), self.limits.read_timeout))
         else:
             while data := await asyncio.wait_for(reader.read(65536), self.limits.read_timeout): writer.write(data)
         await writer.drain()
