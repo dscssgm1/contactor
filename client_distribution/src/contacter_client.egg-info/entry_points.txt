@@ -1,0 +1,3 @@
+[console_scripts]
+contacter-a-client = contacter_client.a_client_app:main
+contacter-client = contacter_client.client:main

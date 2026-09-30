@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/contacter_client/__init__.py
+src/contacter_client/a_client.py
+src/contacter_client/a_client_app.py
+src/contacter_client/b_client.py
+src/contacter_client/client.py
+src/contacter_client/config.py
+src/contacter_client.egg-info/PKG-INFO
+src/contacter_client.egg-info/SOURCES.txt
+src/contacter_client.egg-info/dependency_links.txt
+src/contacter_client.egg-info/entry_points.txt
+src/contacter_client.egg-info/top_level.txt
+src/contacter_wire/__init__.py
+src/contacter_wire/auth.py
+src/contacter_wire/protocol.py

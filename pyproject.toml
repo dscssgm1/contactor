@@ -1,0 +1,8 @@
+[project]
+name = "contacter"
+version = "0.1.0"
+description = "Bidirectional UDP relay for private game services"
+requires-python = ">=3.10"
+
+[project.scripts]
+contacter = "contacter.__main__:main"
