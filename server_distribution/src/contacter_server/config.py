@@ -24,11 +24,12 @@ def load_json(path):
 
 
 @dataclass
-class TunnelConfig:
-    host: str = '0.0.0.0'
-    port: int = 4443
-    tls_context: ssl.SSLContext | None = None
-    stream_secret: bytes = b''
+class TcpListener:
+    listen_host: str
+    listen_port: int
+    target_id: str
+    service: str
+    max_connections: int = 25
 
 
 @dataclass
@@ -46,6 +47,7 @@ class RelayConfig:
     http_listen_port: int | None = None
     http_routes: list = field(default_factory=list)
     http_limits: dict = field(default_factory=dict)
+    tcp_listeners: list = field(default_factory=list)
 
 
 def load_relay(path):
@@ -58,18 +60,32 @@ def load_relay(path):
         policy = x.get('multiple_a_policy', x.get('policy', 'exclusive'))
         if policy not in ('exclusive', 'replace', 'shared'):
             raise ValueError('invalid policy')
+        services = {}
+        for name, svc in (x.get('services') or {}).items():
+            services[str(name)] = str(svc.get('protocol', 'tcp'))
         targets[tid] = TargetConfig(
             tid, secret_bytes(x['b_secret']), secret_bytes(x['a_secret']),
-            port, policy, int(x.get('max_sessions', 1)))
+            port, policy, int(x.get('max_sessions', 1)), services)
 
     tls = None
     if d.get('tls_cert') and d.get('tls_key'):
         tls = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         tls.load_cert_chain(d['tls_cert'], d['tls_key'])
     stream_secret = secret_bytes(d['stream_secret']) if d.get('stream_secret') else b''
+
+    tcp_listeners = []
+    for item in d.get('tcp_listeners', []):
+        tcp_listeners.append(TcpListener(
+            item.get('listen_host', d.get('listen_host', '0.0.0.0')),
+            int(item['listen_port']),
+            item['target_id'],
+            item.get('service', 'default'),
+            int(item.get('max_connections', 25)),
+        ))
+
     return RelayConfig(
         d.get('listen_host', '0.0.0.0'), int(d.get('listen_port', 40000)), targets,
         float(d.get('session_idle_seconds', 60)), int(d.get('max_payload_bytes', 1200)),
         d.get('tunnel_host', '0.0.0.0'), int(d.get('tunnel_port', 4443)), tls,
         stream_secret, d.get('http_listen_host'), d.get('http_listen_port'),
-        d.get('http_routes', []), d.get('http_limits', {}))
+        d.get('http_routes', []), d.get('http_limits', {}), tcp_listeners)

@@ -16,10 +16,14 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     config = load_json(args.config)
-    if config.get('stream_secret'):
-        asyncio.run(OutboundTunnel(config).run())
-    else:
-        asyncio.run(BClient(config).run())
+
+    async def run():
+        tasks = [asyncio.create_task(BClient(config).run())]
+        if config.get('stream_secret'):
+            tasks.append(asyncio.create_task(OutboundTunnel(config).run()))
+        await asyncio.gather(*tasks)
+
+    asyncio.run(run())
 
 
 if __name__ == "__main__":

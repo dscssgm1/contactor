@@ -57,8 +57,9 @@ def _headers(raw: Iterable[tuple[bytes, bytes]], *, preserve_framing: bool = Fal
 
 
 class HttpProxy:
-    def __init__(self, routes: list[HttpRoute], limits: HttpLimits | None = None):
+    def __init__(self, routes: list[HttpRoute], limits: HttpLimits | None = None, tunnel=None):
         self.routes, self.limits = routes, limits or HttpLimits()
+        self.tunnel = tunnel
 
     async def _readline(self, reader: asyncio.StreamReader, *, limit: int, status: int = 400) -> bytes:
         line = await asyncio.wait_for(reader.readline(), self.limits.read_timeout)
@@ -179,7 +180,7 @@ class HttpProxy:
         upstream_w = None
         try:
             upstream_r, upstream_w = await asyncio.wait_for(
-                asyncio.open_connection(route.upstream_host, route.upstream_port), self.limits.connect_timeout
+                self._connect(route), self.limits.connect_timeout
             )
             path = request.target if request.target.startswith("/") else "/"
             headers, _ = _headers(request.headers)
@@ -196,12 +197,21 @@ class HttpProxy:
             await self.pipe_response(upstream_r, client)
         except asyncio.TimeoutError:
             raise HttpProxyError(504, "upstream timeout")
-        except (OSError, asyncio.IncompleteReadError):
+        except (OSError, asyncio.IncompleteReadError, ConnectionError):
             raise HttpProxyError(502, "bad gateway")
         finally:
             if upstream_w is not None:
-                upstream_w.close()
-                await upstream_w.wait_closed()
+                try:
+                    result = upstream_w.close()
+                    if asyncio.iscoroutine(result):
+                        await result
+                except (OSError, ConnectionError):
+                    pass
+
+    async def _connect(self, route: HttpRoute):
+        if self.tunnel is None:
+            raise ConnectionError("tunnel unavailable")
+        return await self.tunnel.open_connection(route.target_id, route.service)
 
     async def pipe_response(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         line = await self._readline(reader, limit=self.limits.max_request_line, status=502)

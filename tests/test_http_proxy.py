@@ -29,9 +29,18 @@ class HttpProxyTests(unittest.IsolatedAsyncioTestCase):
 
         self.upstream_server = await asyncio.start_server(upstream, "127.0.0.1", 0)
         upstream_port = self.upstream_server.sockets[0].getsockname()[1]
+
+        class FakeTunnel:
+            def __init__(self, port):
+                self.port = port
+
+            async def open_connection(self, target_id, service):
+                return await asyncio.open_connection("127.0.0.1", self.port)
+
         self.proxy = HttpProxy(
-            [HttpRoute("example.test", "/", "127.0.0.1", upstream_port)],
+            [HttpRoute("example.test", "/", "office-b", "internal-http")],
             HttpLimits(read_timeout=0.5),
+            FakeTunnel(upstream_port),
         )
         self.proxy_server = await asyncio.start_server(self.proxy.serve, "127.0.0.1", 0)
         self.proxy_port = self.proxy_server.sockets[0].getsockname()[1]
